@@ -1,0 +1,67 @@
+spring:
+  application:
+    name: bpl-betting-service
+  datasource:
+    # In-memory H2. LOCK_TIMEOUT (ms) bounds how long a SELECT ... FOR UPDATE waits for a row lock.
+    url: jdbc:h2:mem:bpl;DB_CLOSE_DELAY=-1;LOCK_TIMEOUT=5000
+    username: sa
+    password:
+    hikari:
+      maximum-pool-size: 20
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: none              # schema is owned by Flyway; the integration tests exercise every mapping
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+          batch_size: 50
+  flyway:
+    enabled: true
+  jackson:
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+
+server:
+  port: 8080
+  shutdown: graceful
+  error:
+    include-message: never
+    include-stacktrace: never
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  pattern:
+    console: "%d{ISO8601} %-5level [%X{requestId:-}] %logger{36} - %msg%n"
+
+bpl:
+  security:
+    # API keys. Only SHA-256 hashes are kept in memory after startup; plaintext is never logged.
+    # THESE ARE DEVELOPMENT KEYS. In any real deployment override them via environment variables
+    # or a secrets manager (e.g. BPL_SECURITY_APIKEYS_0_KEY=...).
+    api-keys:
+      - name: ops-admin
+        key: dev-admin-key-change-me
+        role: ADMIN
+      - name: app-user-1001
+        key: dev-user-u1001-key-change-me
+        role: USER
+        user-id: U1001
+      - name: app-user-1002
+        key: dev-user-u1002-key-change-me
+        role: USER
+        user-id: U1002
+  pagination:
+    default-size: 100
+    max-size: 500

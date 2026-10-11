@@ -1,0 +1,6 @@
+# Local development profile. Activate with:  mvn spring-boot:run -Dspring-boot.run.profiles=dev
+# Exposes the H2 web console at http://localhost:8080/h2-console  (never enable in production).
+spring:
+  h2:
+    console:
+      enabled: true
