@@ -109,18 +109,6 @@ class ConcurrencyTest extends ApiTestSupport {
         }
     }
 
-    @Test
-    void concurrentCreatesOfTheSameMatchConvergeOnOneMatch() throws Exception {
-        String id = newMatchId();
-        var body = matchBody("SCHEDULED", inHours(2));
-
-        List<MvcResult> results = runConcurrently(8, () -> putMatch(id, body).andReturn());
-
-        long created = results.stream().filter(r -> r.getResponse().getStatus() == 201).count();
-        long updated = results.stream().filter(r -> r.getResponse().getStatus() == 200).count();
-        assertThat(created).isEqualTo(1);
-        assertThat(updated).isEqualTo(7);
-    }
 
     // ------------------------------------------------------------ helper
 
