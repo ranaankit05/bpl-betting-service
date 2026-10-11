@@ -1,0 +1,1745 @@
+{
+	"info": {
+		"_postman_id": "93362bf1-63f1-4816-9f1f-a161a937e1ec",
+		"name": "Bally Premium League(BPL)",
+		"description": "Postman collection for the Bally Premium League match betting service.\n\nEVERYTHING is driven by the 'BPL Local' environment: paths, API keys, user ids, team ids/names, match name, statuses and scores. Select that environment, then run folders 01 -> 05 in order (or use the Collection Runner). Edit the environment values to change the data; no request needs editing.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "00 - Health Check",
+			"item": [
+				{
+					"name": "Health check (no auth)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+									"pm.test(\"UP\", () => pm.expect(pm.response.json().status).to.eql(\"UP\"));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/{{healthPath}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"{{healthPath}}"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "01 - Match setup (ADMIN)",
+			"item": [
+				{
+					"name": "Create match",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Optionally generate a fresh match id each run (set autoGenerateMatchId=false to use matchId as-is),",
+									"// and a start time N hours ahead (betting is only open before the start time).",
+									"const suffix = Date.now().toString(36).toUpperCase();",
+									"if (pm.environment.get(\"autoGenerateMatchId\") !== \"false\") {",
+									"    pm.environment.set(\"matchId\", (pm.environment.get(\"matchIdPrefix\") || \"BPL-\") + suffix);",
+									"}",
+									"const hrs = Number(pm.environment.get(\"startOffsetHours\") || 24);",
+									"pm.environment.set(\"startTime\", new Date(Date.now() + hrs*3600*1000).toISOString().replace(/\\.\\d+Z$/, \"Z\"));",
+									"pm.environment.set(\"idemKey\", \"pm-\" + suffix + \"-\" + Math.floor(Math.random()*1e6));"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+									"",
+									"pm.test(\"Match is SCHEDULED\", () => pm.expect(pm.response.json().status).to.eql(pm.environment.get(\"statusScheduled\")));",
+									"pm.test(\"Location header present\", () => pm.response.to.have.header(\"Location\"));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "{{apiKeyHeader}}",
+								"value": "{{adminKey}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"{{matchName}}\",\n  \"teams\": [\n    { \"teamId\": \"{{team1Id}}\", \"name\": \"{{team1Name}}\" },\n    { \"teamId\": \"{{team2Id}}\", \"name\": \"{{team2Name}}\" }\n  ],\n  \"startTime\": \"{{startTime}}\",\n  \"status\": \"{{statusScheduled}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/{{matchesPath}}/{{matchId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"{{matchesPath}}",
+								"{{matchId}}"
+							]
+						},
+						"description": "201 on first create. Re-sending the same PUT returns 200 (idempotent upsert). If autoGenerateMatchId=false and the match already exists as COMPLETED, this fails with 409."
+					},
+					"response": []
+				},
+				{
+					"name": "Get match(matchId)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+									"pm.test(\"Same id\", () => pm.expect(pm.response.json().matchId).to.eql(pm.environment.get(\"matchId\")));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "{{apiKeyHeader}}",
+								"value": "{{userKey1}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/{{matchesPath}}/{{matchId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"{{matchesPath}}",
+								"{{matchId}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List matches",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+									"",
+									"pm.test(\"Contains our match\", () => pm.expect(pm.response.json().map(m => m.matchId)).to.include(pm.environment.get(\"matchId\")));",
+									"pm.test(\"X-Total-Count header\", () => pm.response.to.have.header(\"X-Total-Count\"));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "{{apiKeyHeader}}",
+								"value": "{{userKey1}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/{{matchesPath}}?status={{statusScheduled}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"{{matchesPath}}"
+							],
+							"query": [
+								{
+									"key": "status",
+									"value": "{{statusScheduled}}"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "02 - Place bets (USER)",
+			"item": [
+				{
+					"name": "Place bet - user 1 on team 1 (with Idempotency-Key)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+									"",
+									"const b = pm.response.json();",
+									"pm.test(\"Bet is OPEN\", () => pm.expect(b.status).to.eql(pm.environment.get(\"betStatusOpen\")));",
+									"pm.environment.set(\"betId1\", b.betId);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "{{apiKeyHeader}}",
+								"value": "{{userKey1}}"
+							},
+							{
+								"key": "{{idempotencyHeader}}",
+								"value": "{{idemKey}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"userId\": \"{{userId1}}\",\n  \"matchId\": \"{{matchId}}\",\n  \"selectedTeamId\": \"{{team1Id}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}{{betsPath}}",
+							"host": [
+								"{{baseUrl}}{{betsPath}}"
+							]
+						},
+						"description": "A user key may only bet as its own user id."
+					},
+					"response": []
+				},
+				{
+					"name": "Place bet - user 2 on team 2",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+									"pm.environment.set(\"betId2\", pm.response.json().betId);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "{{apiKeyHeader}}",
+								"value": "{{userKey2}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"userId\": \"{{userId2}}\",\n  \"matchId\": \"{{matchId}}\",\n  \"selectedTeamId\": \"{{team2Id}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}{{betsPath}}",
+							"host": [
+								"{{baseUrl}}{{betsPath}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get all bets on match (ADMIN)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+									"pm.test(\"2 bets\", () => pm.expect(pm.response.json().length).to.eql(2));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "{{apiKeyHeader}}",
+								"value": "{{adminKey}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/{{matchesPath}}/{{matchId}}{{betsPath}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"{{matchesPath}}",
+								"{{matchId}}{{betsPath}}"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "03 - Go live & scores (ADMIN)",
+			"item": [
+				{
+					"name": "Set match LIVE",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+									"pm.test(\"Match is LIVE\", () => pm.expect(pm.response.json().status).to.eql(pm.environment.get(\"statusLive\")));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "{{apiKeyHeader}}",
+								"value": "{{adminKey}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"{{matchName}}\",\n  \"teams\": [\n    { \"teamId\": \"{{team1Id}}\", \"name\": \"{{team1Name}}\" },\n    { \"teamId\": \"{{team2Id}}\", \"name\": \"{{team2Name}}\" }\n  ],\n  \"startTime\": \"{{startTime}}\",\n  \"status\": \"{{statusLive}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/{{matchesPath}}/{{matchId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"{{matchesPath}}",
+								"{{matchId}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update score - team 1 (mid-innings)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "{{apiKeyHeader}}",
+								"value": "{{adminKey}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"teamId\": \"{{team1Id}}\",\n  \"runs\": {{midRuns}},\n  \"wickets\": {{midWickets}},\n  \"overs\": {{midOvers}}\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/{{matchesPath}}/{{matchId}}{{scorePath}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"{{matchesPath}}",
+								"{{matchId}}{{scorePath}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update score - team 1 (final)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "{{apiKeyHeader}}",
+								"value": "{{adminKey}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"teamId\": \"{{team1Id}}\",\n  \"runs\": {{team1Runs}},\n  \"wickets\": {{team1Wickets}},\n  \"overs\": {{team1Overs}}\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/{{matchesPath}}/{{matchId}}{{scorePath}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"{{matchesPath}}",
+								"{{matchId}}{{scorePath}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update score - team 2 (final)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+									"pm.test(\"Both scores present\", () => pm.expect(pm.response.json().scores.length).to.eql(2));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "{{apiKeyHeader}}",
+								"value": "{{adminKey}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"teamId\": \"{{team2Id}}\",\n  \"runs\": {{team2Runs}},\n  \"wickets\": {{team2Wickets}},\n  \"overs\": {{team2Overs}}\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/{{matchesPath}}/{{matchId}}{{scorePath}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"{{matchesPath}}",
+								"{{matchId}}{{scorePath}}"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "04 - Complete match & settlement",
+			"item": [
+				{
+					"name": "Complete match (winner derived from final scores)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+									"pm.test(\"Match is COMPLETED\", () => pm.expect(pm.response.json().status).to.eql(pm.environment.get(\"statusCompleted\")));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "{{apiKeyHeader}}",
+								"value": "{{adminKey}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"{{matchName}}\",\n  \"teams\": [\n    { \"teamId\": \"{{team1Id}}\", \"name\": \"{{team1Name}}\" },\n    { \"teamId\": \"{{team2Id}}\", \"name\": \"{{team2Name}}\" }\n  ],\n  \"startTime\": \"{{startTime}}\",\n  \"status\": \"{{statusCompleted}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/{{matchesPath}}/{{matchId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"{{matchesPath}}",
+								"{{matchId}}"
+							]
+						},
+						"description": "Bets are settled automatically from the final scores. A tie / missing score settles bets as VOID."
+					},
+					"response": []
+				},
+				{
+					"name": "Settled bets on match(ADMIN)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+									"pm.test(\"2 settled\", () => pm.expect(pm.response.json().length).to.eql(2));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "{{apiKeyHeader}}",
+								"value": "{{adminKey}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/{{matchesPath}}/{{matchId}}{{betsPath}}?status={{betStatusSettled}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"{{matchesPath}}",
+								"{{matchId}}{{betsPath}}"
+							],
+							"query": [
+								{
+									"key": "status",
+									"value": "{{betStatusSettled}}"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "05 - User views",
+			"item": [
+				{
+					"name": "List Upcoming matches",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+									"pm.test(\"Contains our match\", () => pm.expect(pm.response.json().map(m => m.matchId)).to.include(pm.environment.get(\"matchId\")));"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "{{apiKeyHeader}}",
+								"value": "{{userKey1}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/{{matchesPath}}?status={{statusScheduled}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"{{matchesPath}}"
+							],
+							"query": [
+								{
+									"key": "status",
+									"value": "{{statusScheduled}}"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List LIVE matches",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+									"pm.test(\"Contains our match\", () => pm.expect(pm.response.json().map(m => m.matchId)).to.include(pm.environment.get(\"matchId\")));"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "{{apiKeyHeader}}",
+								"value": "{{userKey1}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/{{matchesPath}}?status={{statusLive}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"{{matchesPath}}"
+							],
+							"query": [
+								{
+									"key": "status",
+									"value": "{{statusLive}}"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List COMPLETED matches",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "{{apiKeyHeader}}",
+								"value": "{{userKey1}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/{{matchesPath}}?status={{statusCompleted}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"{{matchesPath}}"
+							],
+							"query": [
+								{
+									"key": "status",
+									"value": "{{statusCompleted}}"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get user 1's all bets",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+									"pm.test(\"Has our bet\", () => pm.expect(pm.response.json().map(b => b.betId)).to.include(pm.environment.get(\"betId1\")));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "{{apiKeyHeader}}",
+								"value": "{{userKey1}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/{{usersPath}}/{{userId1}}{{betsPath}}?status={{betStatusOpen}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"{{usersPath}}",
+								"{{userId1}}{{betsPath}}"
+							],
+							"query": [
+								{
+									"key": "status",
+									"value": "{{betStatusOpen}}"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get user 1's settled bets",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+									"pm.test(\"Has our bet\", () => pm.expect(pm.response.json().map(b => b.betId)).to.include(pm.environment.get(\"betId1\")));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "{{apiKeyHeader}}",
+								"value": "{{userKey1}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/{{usersPath}}/{{userId1}}{{betsPath}}?status={{betStatusSettled}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"{{usersPath}}",
+								"{{userId1}}{{betsPath}}"
+							],
+							"query": [
+								{
+									"key": "status",
+									"value": "{{betStatusSettled}}"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get user 1's open bets (ours is gone)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+									"pm.test(\"Our bet not OPEN\", () => pm.expect(pm.response.json().map(b => b.betId)).to.not.include(pm.environment.get(\"betId1\")));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "{{apiKeyHeader}}",
+								"value": "{{userKey1}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/{{usersPath}}/{{userId1}}{{betsPath}}?status={{betStatusOpen}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"{{usersPath}}",
+								"{{userId1}}{{betsPath}}"
+							],
+							"query": [
+								{
+									"key": "status",
+									"value": "{{betStatusOpen}}"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get bet status (bet Id)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+									"pm.test(\"Bet is OPEN\", () => pm.expect(pm.response.json().status).to.eql(pm.environment.get(\"betStatusOpen\")));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "{{apiKeyHeader}}",
+								"value": "{{userKey1}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/{{betsPath}}/{{betId1}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"{{betsPath}}",
+								"{{betId1}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get bet - user 2 (result follows the scores)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+									"",
+									"const r1 = Number(pm.environment.get(\"team1Runs\")), r2 = Number(pm.environment.get(\"team2Runs\"));",
+									"// user 1 bets on team 1, user 2 bets on team 2; a tie settles as VOID",
+									"const expected = (who) => r1 === r2 ? \"VOID\" : ((r1 > r2) === (who === 1) ? \"WON\" : \"LOST\");",
+									"",
+									"const b = pm.response.json();",
+									"pm.test(\"SETTLED\", () => pm.expect(b.status).to.eql(pm.environment.get(\"betStatusSettled\")));",
+									"pm.test(\"Result is \" + expected(2), () => pm.expect(b.result).to.eql(expected(2)));"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "{{apiKeyHeader}}",
+								"value": "{{userKey2}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}{{betsPath}}/{{betId2}}",
+							"host": [
+								"{{baseUrl}}{{betsPath}}"
+							],
+							"path": [
+								"{{betId2}}"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "06 - Error cases (run after 01-04)",
+			"item": [
+				{
+					"name": "No API key (401)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"Status is 401\", () => pm.response.to.have.status(401));",
+									"pm.test(\"Error code is UNAUTHENTICATED\", () => pm.expect(pm.response.json().code).to.eql(\"UNAUTHENTICATED\"));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/{{matchesPath}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"{{matchesPath}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Wrong API key (401)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"Status is 401\", () => pm.response.to.have.status(401));",
+									"pm.test(\"Error code is UNAUTHENTICATED\", () => pm.expect(pm.response.json().code).to.eql(\"UNAUTHENTICATED\"));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "{{apiKeyHeader}}",
+								"value": "{{invalidApiKey}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/{{matchesPath}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"{{matchesPath}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "USER key cannot create/update match (403)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"Status is 403\", () => pm.response.to.have.status(403));",
+									"pm.test(\"Error code is FORBIDDEN\", () => pm.expect(pm.response.json().code).to.eql(\"FORBIDDEN\"));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "{{apiKeyHeader}}",
+								"value": "{{userKey1}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"{{matchName}}\",\n  \"teams\": [\n    { \"teamId\": \"{{team1Id}}\", \"name\": \"{{team1Name}}\" },\n    { \"teamId\": \"{{team2Id}}\", \"name\": \"{{team2Name}}\" }\n  ],\n  \"startTime\": \"{{startTime}}\",\n  \"status\": \"{{statusCompleted}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/{{matchesPath}}/{{matchId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"{{matchesPath}}",
+								"{{matchId}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "USER key cannot list match bets (403)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"Status is 403\", () => pm.response.to.have.status(403));",
+									"pm.test(\"Error code is FORBIDDEN\", () => pm.expect(pm.response.json().code).to.eql(\"FORBIDDEN\"));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "{{apiKeyHeader}}",
+								"value": "{{userKey1}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/{{matchesPath}}/{{matchId}}{{betsPath}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"{{matchesPath}}",
+								"{{matchId}}{{betsPath}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "ADMIN key cannot place bets (403)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"Status is 403\", () => pm.response.to.have.status(403));",
+									"pm.test(\"Error code is FORBIDDEN\", () => pm.expect(pm.response.json().code).to.eql(\"FORBIDDEN\"));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "{{apiKeyHeader}}",
+								"value": "{{adminKey}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"userId\": \"{{userId1}}\",\n  \"matchId\": \"{{matchId}}\",\n  \"selectedTeamId\": \"{{team1Id}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/{{betsPath}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"{{betsPath}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Bet as another user (403 USER_MISMATCH)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"Status is 403\", () => pm.response.to.have.status(403));",
+									"pm.test(\"Error code is USER_MISMATCH\", () => pm.expect(pm.response.json().code).to.eql(\"USER_MISMATCH\"));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "{{apiKeyHeader}}",
+								"value": "{{userKey1}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"userId\": \"{{userId2}}\",\n  \"matchId\": \"{{matchId}}\",\n  \"selectedTeamId\": \"{{team1Id}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/{{betsPath}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"{{betsPath}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Bet on team not in match (422 INVALID_TEAM)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"Status is 422\", () => pm.response.to.have.status(422));",
+									"pm.test(\"Error code is INVALID_TEAM\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_TEAM\"));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "{{apiKeyHeader}}",
+								"value": "{{userKey1}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"userId\": \"{{userId1}}\",\n  \"matchId\": \"{{matchId}}\",\n  \"selectedTeamId\": \"{{invalidTeamId}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/{{betsPath}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"{{betsPath}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Bet on unknown match (404)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"Status is 404\", () => pm.response.to.have.status(404));",
+									"pm.test(\"Error code is MATCH_NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"MATCH_NOT_FOUND\"));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "{{apiKeyHeader}}",
+								"value": "{{userKey1}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"userId\": \"{{userId1}}\",\n  \"matchId\": \"{{unknownMatchId}}\",\n  \"selectedTeamId\": \"{{team1Id}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/{{betsPath}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"{{betsPath}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Bet with missing fields (400)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"Status is 400\", () => pm.response.to.have.status(400));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "{{apiKeyHeader}}",
+								"value": "{{userKey1}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"userId\": \"{{userId1}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/{{betsPath}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"{{betsPath}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get unknown match (404)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"Status is 404\", () => pm.response.to.have.status(404));",
+									"pm.test(\"Error code is MATCH_NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"MATCH_NOT_FOUND\"));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "{{apiKeyHeader}}",
+								"value": "{{userKey1}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/{{matchesPath}}/{{unknownMatchId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"{{matchesPath}}",
+								"{{unknownMatchId}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get unknown bet (404)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"Status is 404\", () => pm.response.to.have.status(404));",
+									"pm.test(\"Error code is BET_NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"BET_NOT_FOUND\"));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "{{apiKeyHeader}}",
+								"value": "{{userKey1}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/{{betsPath}}/{{unknownBetId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"{{betsPath}}",
+								"{{unknownBetId}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Read another user's bet (404, existence hidden)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"Status is 404\", () => pm.response.to.have.status(404));",
+									"pm.test(\"Error code is BET_NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"BET_NOT_FOUND\"));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "{{apiKeyHeader}}",
+								"value": "{{userKey2}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/{{betsPath}}/{{betId1}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"{{betsPath}}",
+								"{{betId1}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Read another user's bet list (403)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"Status is 403\", () => pm.response.to.have.status(403));",
+									"pm.test(\"Error code is FORBIDDEN\", () => pm.expect(pm.response.json().code).to.eql(\"FORBIDDEN\"));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "{{apiKeyHeader}}",
+								"value": "{{userKey2}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/{{usersPath}}/{{userId1}}{{betsPath}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"{{usersPath}}",
+								"{{userId1}}{{betsPath}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Score update on completed match (409 MATCH_NOT_LIVE)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"Status is 409\", () => pm.response.to.have.status(409));",
+									"pm.test(\"Error code is MATCH_NOT_LIVE\", () => pm.expect(pm.response.json().code).to.eql(\"MATCH_NOT_LIVE\"));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "{{apiKeyHeader}}",
+								"value": "{{adminKey}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"teamId\": \"{{team1Id}}\",\n  \"runs\": {{team1Runs}},\n  \"wickets\": {{team1Wickets}},\n  \"overs\": {{team1Overs}}\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/{{matchesPath}}/{{matchId}}{{scorePath}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"{{matchesPath}}",
+								"{{matchId}}{{scorePath}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Invalid overs (422 INVALID_OVERS)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"Status is 422\", () => pm.response.to.have.status(422));",
+									"pm.test(\"Error code is INVALID_OVERS\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_OVERS\"));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "{{apiKeyHeader}}",
+								"value": "{{adminKey}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"teamId\": \"{{team1Id}}\",\n  \"runs\": {{midRuns}},\n  \"wickets\": {{midWickets}},\n  \"overs\": {{invalidOvers}}\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/{{matchesPath}}/{{matchId}}{{scorePath}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"{{matchesPath}}",
+								"{{matchId}}{{scorePath}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Invalid wickets (400)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"Status is 400\", () => pm.response.to.have.status(400));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "{{apiKeyHeader}}",
+								"value": "{{adminKey}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"teamId\": \"{{team1Id}}\",\n  \"runs\": {{midRuns}},\n  \"wickets\": {{invalidWickets}},\n  \"overs\": {{midOvers}}\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/{{matchesPath}}/{{matchId}}{{scorePath}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"{{matchesPath}}",
+								"{{matchId}}{{scorePath}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Modify completed match (409 MATCH_COMPLETED)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"Status is 409\", () => pm.response.to.have.status(409));",
+									"pm.test(\"Error code is MATCH_COMPLETED\", () => pm.expect(pm.response.json().code).to.eql(\"MATCH_COMPLETED\"));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "{{apiKeyHeader}}",
+								"value": "{{adminKey}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Renamed after completion\",\n  \"teams\": [\n    { \"teamId\": \"{{team1Id}}\", \"name\": \"{{team1Name}}\" },\n    { \"teamId\": \"{{team2Id}}\", \"name\": \"{{team2Name}}\" }\n  ],\n  \"startTime\": \"{{startTime}}\",\n  \"status\": \"{{statusCompleted}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/{{matchesPath}}/{{matchId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"{{matchesPath}}",
+								"{{matchId}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Invalid status filter (400)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"Status is 400\", () => pm.response.to.have.status(400));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "{{apiKeyHeader}}",
+								"value": "{{userKey1}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/{{matchesPath}}?status={{invalidStatus}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"{{matchesPath}}"
+							],
+							"query": [
+								{
+									"key": "status",
+									"value": "{{invalidStatus}}"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Place bet after match is LIVE (409 BETTING_CLOSED)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"Status is 409\", () => pm.response.to.have.status(409));",
+									"pm.test(\"Error code is BETTING_CLOSED\", () => pm.expect(pm.response.json().code).to.eql(\"BETTING_CLOSED\"));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "{{apiKeyHeader}}",
+								"value": "{{userKey1}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"userId\": \"{{userId1}}\",\n  \"matchId\": \"{{matchId}}\",\n  \"selectedTeamId\": \"{{team1Id}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/{{betsPath}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"{{betsPath}}"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		}
+	]
+}
